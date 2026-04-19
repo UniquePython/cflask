@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include "cflask.h"
 
 #include <stdio.h>
@@ -23,14 +25,14 @@ typedef struct
 {
     const char *method;
     const char *path;
-    int (*handler)(int);
+    int (*handler)(Request *, int);
 } Route;
 
 Route *routes = NULL;
 size_t route_count = 0;
 size_t route_capacity = 0;
 
-void register_route(const char *method, const char *path, int (*handler)(int))
+void register_route(const char *method, const char *path, int (*handler)(Request *, int))
 {
     if (route_count == route_capacity)
     {
@@ -79,6 +81,40 @@ static ssize_t write_all(int fd, const void *buf, size_t len)
     return (ssize_t)total;
 }
 
+char *get_query_param(const char *query, const char *key)
+{
+    if (!query || !key)
+        return NULL;
+
+    char *q = strdup(query); // a modifiable copy
+    if (!q)
+        return NULL;
+
+    char *pair = strtok(q, "&");
+    while (pair)
+    {
+        char *eq = strchr(pair, '=');
+        if (eq)
+        {
+            *eq = '\0';
+            const char *k = pair;
+            const char *v = eq + 1;
+
+            if (strcmp(k, key) == 0)
+            {
+                char *result = strdup(v); // return a copy
+                free(q);
+                return result;
+            }
+        }
+
+        pair = strtok(NULL, "&");
+    }
+
+    free(q);
+    return NULL;
+}
+
 void send_response(int client_fd, int status, const char *status_text, const char *body)
 {
     char header[512];
@@ -119,7 +155,7 @@ void send_response(int client_fd, int status, const char *status_text, const cha
     }
 }
 
-static void dispatch(const char *method, const char *path, int client_fd, struct sockaddr_in *client_addr)
+static void dispatch(Request *req, int client_fd, struct sockaddr_in *client_addr)
 {
     char ip[INET_ADDRSTRLEN];
     if (!inet_ntop(AF_INET, &client_addr->sin_addr, ip, sizeof(ip)))
@@ -134,11 +170,11 @@ static void dispatch(const char *method, const char *path, int client_fd, struct
 
     for (size_t i = 0; i < route_count; i++)
     {
-        if (strcmp(routes[i].method, method) == 0 && strcmp(routes[i].path, path) == 0)
+        if (strcmp(routes[i].method, req->method) == 0 && strcmp(routes[i].path, req->path) == 0)
         {
-            int status = routes[i].handler(client_fd);
+            int status = routes[i].handler(req, client_fd);
 
-            printf("%s - - [%s] \"%s %s HTTP/1.1\" %d\n", ip, timebuf, method, path, status);
+            printf("%s - - [%s] \"%s %s?%s %s\" %d\n", ip, timebuf, req->method, req->path, req->query, req->version, status);
             fflush(stdout);
 
             return;
@@ -147,7 +183,7 @@ static void dispatch(const char *method, const char *path, int client_fd, struct
 
     send_response(client_fd, 404, "Not Found", "404 Not Found");
 
-    printf("%s - - [%s] \"%s %s HTTP/1.1\" %d\n", ip, timebuf, method, path, 404);
+    printf("%s - - [%s] \"%s %s %s\" %d\n", ip, timebuf, req->method, req->path, req->version, 404);
     fflush(stdout);
 }
 
@@ -249,7 +285,7 @@ void run_server(uint16_t port, int backlog)
     }
 
     printf(" * Running CFlask server (https://github.com/UniquePython/cflask)\n");
-    printf(" * Running on http://0.0.0.0:%d (all interfaces)\n", port);
+    printf(" * Running on http://0.0.0.0:%u (all interfaces)\n", (unsigned)port);
     printf(" * Running on http://127.0.0.1:%d\n", port);
     printf("Press CTRL+C to quit\n");
     fflush(stdout);
@@ -281,17 +317,51 @@ void run_server(uint16_t port, int backlog)
             continue;
         }
 
-        char *method = strtok(buffer, " ");
-        char *path = strtok(NULL, " ");
+        Request req = {0};
 
-        if (!method || !path)
+        req.method = strtok(buffer, " ");
+        req.path = strtok(NULL, " ");
+        req.version = strtok(NULL, "\r\n");
+
+        if (!req.method || !req.path || !req.version)
         {
+            send_response(client_fd, 400, "Bad Request", "400 Bad Request");
             close(client_fd);
             free(buffer);
             continue;
         }
 
-        dispatch(method, path, client_fd, &client_addr);
+        if (strcmp(req.method, "GET") != 0 &&
+            strcmp(req.method, "POST") != 0 &&
+            strcmp(req.method, "PUT") != 0 &&
+            strcmp(req.method, "PATCH") != 0 &&
+            strcmp(req.method, "DELETE") != 0)
+        {
+            send_response(client_fd, 405, "Method Not Allowed", "Method Not Allowed");
+            close(client_fd);
+            free(buffer);
+            continue;
+        }
+
+        if (strncmp(req.version, "HTTP/", 5) != 0)
+        {
+            send_response(client_fd, 400, "Bad Request", "Invalid HTTP version");
+            close(client_fd);
+            free(buffer);
+            continue;
+        }
+
+        // split query
+        char *qmark = strchr(req.path, '?');
+        if (qmark)
+        {
+            *qmark = '\0';
+            req.query = qmark + 1;
+        }
+        else
+            req.query = NULL;
+
+        dispatch(&req, client_fd, &client_addr);
 
         free(buffer);
 

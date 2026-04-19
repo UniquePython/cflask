@@ -1,19 +1,20 @@
 #include "cflask.h"
 
-HANDLER(hello)
+HANDLER(greet)
 {
-    OK("hello");
-}
+    GET_QUERY_PARAM(name, "name");
+    if (!name)
+        BAD_REQUEST("missing 'name' parameter");
 
-HANDLER(about)
-{
-    OK("about");
+    int status = 200;
+    send_response(client_fd, 200, "OK", name);
+    free(name);
+    return status;
 }
 
 int main(void)
 {
-    REGISTER_GET(hello);
-    REGISTER_GET(about);
+    REGISTER_GET(greet);
 
     run_server(8080, 5);
 

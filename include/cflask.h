@@ -2,12 +2,22 @@
 #define CFLASK_H_
 
 #include <inttypes.h>
+#include <stddef.h>
 
-void register_route(const char *method, const char *path, int (*handler)(int));
+typedef struct
+{
+    const char *method;
+    const char *path;
+    const char *query;
+    const char *version;
+} Request;
+
+void register_route(const char *method, const char *path, int (*handler)(Request *, int));
+char *get_query_param(const char *query, const char *key);
 void send_response(int client_fd, int status, const char *status_text, const char *body);
 void run_server(uint16_t port, int backlog);
 
-#define HANDLER(name) int name##_handler(int client_fd)
+#define HANDLER(name) int name##_handler(Request *req, int client_fd)
 #define RESPOND(code, msg, body)                   \
     do                                             \
     {                                              \
@@ -15,8 +25,11 @@ void run_server(uint16_t port, int backlog);
         return code;                               \
     } while (0)
 
+#define GET_QUERY_PARAM(var, key) char *var = get_query_param(req->query, key)
+
 #define OK(body) RESPOND(200, "OK", body)
 #define NOT_FOUND(body) RESPOND(404, "Not Found", body)
+#define BAD_REQUEST(body) RESPOND(400, "Bad Request", body)
 
 #define _REGISTER_METHOD(method, route) register_route(#method, "/" #route, route##_handler);
 
