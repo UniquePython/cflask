@@ -122,20 +122,24 @@ void send_response(int client_fd, int status, const char *status_text, const cha
 static void dispatch(const char *method, const char *path, int client_fd, struct sockaddr_in *client_addr)
 {
     char ip[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &client_addr->sin_addr, ip, sizeof(ip));
+    if (!inet_ntop(AF_INET, &client_addr->sin_addr, ip, sizeof(ip)))
+    {
+        strcpy(ip, "unknown");
+    }
 
     char timebuf[64];
     time_t now = time(NULL);
     struct tm *tm_info = localtime(&now);
     strftime(timebuf, sizeof(timebuf), "%d/%b/%Y %H:%M:%S", tm_info);
 
-    for (int i = 0; i < route_count; i++)
+    for (size_t i = 0; i < route_count; i++)
     {
         if (strcmp(routes[i].method, method) == 0 && strcmp(routes[i].path, path) == 0)
         {
             int status = routes[i].handler(client_fd);
 
             printf("%s - - [%s] \"%s %s HTTP/1.1\" %d\n", ip, timebuf, method, path, status);
+            fflush(stdout);
 
             return;
         }
@@ -144,6 +148,7 @@ static void dispatch(const char *method, const char *path, int client_fd, struct
     send_response(client_fd, 404, "Not Found", "404 Not Found");
 
     printf("%s - - [%s] \"%s %s HTTP/1.1\" %d\n", ip, timebuf, method, path, 404);
+    fflush(stdout);
 }
 
 #define INITIAL_BUF_SIZE 1024
@@ -191,7 +196,7 @@ static ssize_t read_request(int fd, char **out_buf)
         if (n == 0)
             break;
 
-        total += n;
+        total += (size_t)n;
         buffer[total] = '\0';
 
         if (strstr(buffer, "\r\n\r\n"))
@@ -220,11 +225,14 @@ void run_server(uint16_t port, int backlog)
     }
 
     server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons((uint16_t)port);
+    server_addr.sin_port = htons(port);
     server_addr.sin_addr.s_addr = INADDR_ANY;
 
     int opt = 1;
-    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0)
+    {
+        perror("setsockopt");
+    }
 
     if (bind(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
     {
@@ -244,6 +252,7 @@ void run_server(uint16_t port, int backlog)
     printf(" * Running on http://0.0.0.0:%d (all interfaces)\n", port);
     printf(" * Running on http://127.0.0.1:%d\n", port);
     printf("Press CTRL+C to quit\n");
+    fflush(stdout);
 
     while (keep_running)
     {
@@ -290,6 +299,7 @@ void run_server(uint16_t port, int backlog)
     }
 
     printf("\nShutting down server...\n");
+    fflush(stdout);
 
     free(routes);
     close(server_fd);
