@@ -1,11 +1,20 @@
 #ifndef CFLASK_H_
 #define CFLASK_H_
 
-void register_route(const char *method, const char *path, void (*handler)(int));
+void register_route(const char *method, const char *path, int (*handler)(int));
 void send_response(int client_fd, int status, const char *status_text, const char *body);
 void run_server(int port, int backlog);
 
-#define HANDLER(name) void name##_handler(int client_fd)
+#define HANDLER(name) int name##_handler(int client_fd)
+#define RESPOND(code, msg, body)                   \
+    do                                             \
+    {                                              \
+        send_response(client_fd, code, msg, body); \
+        return code;                               \
+    } while (0)
+
+#define OK(body) RESPOND(200, "OK", body)
+#define NOT_FOUND(body) RESPOND(404, "Not Found", body)
 
 #define _REGISTER_METHOD(method, route) register_route(#method, "/" #route, route##_handler);
 

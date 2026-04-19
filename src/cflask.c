@@ -7,19 +7,21 @@
 #include <string.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <arpa/inet.h>
+#include <time.h>
 
 typedef struct
 {
     char *method;
     char *path;
-    void (*handler)(int);
+    int (*handler)(int);
 } Route;
 
 Route *routes = NULL;
 int route_count = 0;
 int route_capacity = 0;
 
-void register_route(const char *method, const char *path, void (*handler)(int))
+void register_route(const char *method, const char *path, int (*handler)(int))
 {
     if (route_count == route_capacity)
     {
@@ -108,18 +110,31 @@ void send_response(int client_fd, int status, const char *status_text, const cha
     }
 }
 
-static void dispatch(const char *method, const char *path, int client_fd)
+static void dispatch(const char *method, const char *path, int client_fd, struct sockaddr_in *client_addr)
 {
+    char ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &client_addr->sin_addr, ip, sizeof(ip));
+
+    char timebuf[64];
+    time_t now = time(NULL);
+    struct tm *tm_info = localtime(&now);
+    strftime(timebuf, sizeof(timebuf), "%d/%b/%Y %H:%M:%S", tm_info);
+
     for (int i = 0; i < route_count; i++)
     {
         if (strcmp(routes[i].method, method) == 0 && strcmp(routes[i].path, path) == 0)
         {
-            routes[i].handler(client_fd);
+            int status = routes[i].handler(client_fd);
+
+            printf("%s - - [%s] \"%s %s HTTP/1.1\" %d\n", ip, timebuf, method, path, status);
+
             return;
         }
     }
 
     send_response(client_fd, 404, "Not Found", "404 Not Found");
+
+    printf("%s - - [%s] \"%s %s HTTP/1.1\" %d\n", ip, timebuf, method, path, 404);
 }
 
 #define INITIAL_BUF_SIZE 1024
@@ -212,12 +227,17 @@ void run_server(int port, int backlog)
         return;
     }
 
-    printf("Listening on port %d...\n", port);
+    printf(" * Running CFlask server (https://github.com/UniquePython/cflask)");
+    printf(" * Running on http://0.0.0.0:%d (all interfaces)\n", port);
+    printf(" * Running on http://127.0.0.1:%d\n", port);
+    printf("Press CTRL+C to quit\n");
 
     while (1)
     {
-        int client_fd;
-        client_fd = accept(server_fd, NULL, NULL);
+        struct sockaddr_in client_addr;
+        socklen_t addr_len = sizeof(client_addr);
+
+        int client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &addr_len);
         if (client_fd < 0)
         {
             if (errno == EINTR)
@@ -245,7 +265,7 @@ void run_server(int port, int backlog)
             continue;
         }
 
-        dispatch(method, path, client_fd);
+        dispatch(method, path, client_fd, &client_addr);
 
         free(buffer);
 

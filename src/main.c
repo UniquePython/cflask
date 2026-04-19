@@ -2,12 +2,12 @@
 
 HANDLER(hello)
 {
-    send_response(client_fd, 200, "OK", "hello");
+    OK("hello");
 }
 
 HANDLER(about)
 {
-    send_response(client_fd, 200, "OK", "about");
+    OK("about");
 }
 
 int main(void)
