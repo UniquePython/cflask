@@ -46,6 +46,16 @@ int main()
 
     printf("Client connected!\n");
 
+    char buffer[1024];
+    ssize_t bytes_read = read(client_fd, buffer, sizeof(buffer) - 1);
+    buffer[bytes_read] = '\0';
+    printf("Received:\n%s\n", buffer);
+
+    char method[16], path[256];
+    sscanf(buffer, "%s %s", method, path);
+    printf("Method: %s\n", method);
+    printf("Path:   %s\n", path);
+
     close(client_fd);
     close(server_fd);
     return 0;
