@@ -14,13 +14,13 @@ TARGET = $(BUILD_DIR)/cflask
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
+	@$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
+	@$(CC) $(CFLAGS) -c $< -o $@
 
 run: all
-	./$(TARGET)
+	@./$(TARGET)
 
 clean:
-	rm -f $(BUILD_DIR)/*.o $(TARGET)
+	@rm -f $(BUILD_DIR)/*.o $(TARGET)

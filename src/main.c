@@ -27,6 +27,23 @@ void register_route(const char *method, const char *path, void (*handler)(int))
     route_count++;
 }
 
+void send_response(int client_fd, int status, const char *status_text, const char *body)
+{
+    char response[1024];
+    size_t body_len = strlen(body);
+
+    snprintf(response, sizeof(response),
+             "HTTP/1.1 %d %s\r\n"
+             "Content-Type: text/plain\r\n"
+             "Content-Length: %zu\r\n"
+             "Connection: close\r\n"
+             "\r\n"
+             "%s",
+             status, status_text, body_len, body);
+
+    write(client_fd, response, strlen(response));
+}
+
 void dispatch(const char *method, const char *path, int client_fd)
 {
     for (int i = 0; i < route_count; i++)
@@ -40,22 +57,6 @@ void dispatch(const char *method, const char *path, int client_fd)
     }
 
     send_response(client_fd, 404, "Not Found", "404 Not Found");
-}
-
-void send_response(int client_fd, int status, const char *status_text, const char *body)
-{
-    char response[1024];
-    int body_len = strlen(body);
-
-    snprintf(response, sizeof(response),
-             "HTTP/1.1 %d %s\r\n"
-             "Content-Type: text/plain\r\n"
-             "Content-Length: %d\r\n"
-             "\r\n"
-             "%s",
-             status, status_text, body_len, body);
-
-    write(client_fd, response, strlen(response));
 }
 
 void hello_handler(int client_fd)
