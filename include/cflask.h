@@ -1,9 +1,11 @@
 #ifndef CFLASK_H_
 #define CFLASK_H_
 
+#include <inttypes.h>
+
 void register_route(const char *method, const char *path, int (*handler)(int));
 void send_response(int client_fd, int status, const char *status_text, const char *body);
-void run_server(int port, int backlog);
+void run_server(uint16_t port, int backlog);
 
 #define HANDLER(name) int name##_handler(int client_fd)
 #define RESPOND(code, msg, body)                   \

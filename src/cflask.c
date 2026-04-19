@@ -9,23 +9,32 @@
 #include <stdlib.h>
 #include <arpa/inet.h>
 #include <time.h>
+#include <signal.h>
+
+static volatile sig_atomic_t keep_running = 1;
+
+static void handle_signal(int sig)
+{
+    (void)sig;
+    keep_running = 0;
+}
 
 typedef struct
 {
-    char *method;
-    char *path;
+    const char *method;
+    const char *path;
     int (*handler)(int);
 } Route;
 
 Route *routes = NULL;
-int route_count = 0;
-int route_capacity = 0;
+size_t route_count = 0;
+size_t route_capacity = 0;
 
 void register_route(const char *method, const char *path, int (*handler)(int))
 {
     if (route_count == route_capacity)
     {
-        int new_capacity = route_capacity == 0 ? 4 : route_capacity * 2;
+        size_t new_capacity = route_capacity == 0 ? 4 : route_capacity * 2;
         Route *new_routes = realloc(routes, new_capacity * sizeof(Route));
 
         if (!new_routes)
@@ -64,10 +73,10 @@ static ssize_t write_all(int fd, const void *buf, size_t len)
         if (n == 0)
             return -1; // shouldn't happen for write, but treat as failure
 
-        total += n;
+        total += (size_t)n;
     }
 
-    return total;
+    return (ssize_t)total;
 }
 
 void send_response(int client_fd, int status, const char *status_text, const char *body)
@@ -97,7 +106,7 @@ void send_response(int client_fd, int status, const char *status_text, const cha
         return;
     }
 
-    if (write_all(client_fd, header, header_len) < 0)
+    if (write_all(client_fd, header, (size_t)header_len) < 0)
     {
         perror("write header");
         return;
@@ -193,8 +202,12 @@ static ssize_t read_request(int fd, char **out_buf)
     return total;
 }
 
-void run_server(int port, int backlog)
+void run_server(uint16_t port, int backlog)
 {
+    signal(SIGINT, handle_signal);  // Ctrl+C
+    signal(SIGTERM, handle_signal); // kill
+    signal(SIGPIPE, SIG_IGN);       // Ignore SIGPIPE so server doesn’t crash if client disconnects mid-write
+
     int server_fd;
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
@@ -207,7 +220,7 @@ void run_server(int port, int backlog)
     }
 
     server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(port);
+    server_addr.sin_port = htons((uint16_t)port);
     server_addr.sin_addr.s_addr = INADDR_ANY;
 
     int opt = 1;
@@ -227,12 +240,12 @@ void run_server(int port, int backlog)
         return;
     }
 
-    printf(" * Running CFlask server (https://github.com/UniquePython/cflask)");
+    printf(" * Running CFlask server (https://github.com/UniquePython/cflask)\n");
     printf(" * Running on http://0.0.0.0:%d (all interfaces)\n", port);
     printf(" * Running on http://127.0.0.1:%d\n", port);
     printf("Press CTRL+C to quit\n");
 
-    while (1)
+    while (keep_running)
     {
         struct sockaddr_in client_addr;
         socklen_t addr_len = sizeof(client_addr);
@@ -241,7 +254,11 @@ void run_server(int port, int backlog)
         if (client_fd < 0)
         {
             if (errno == EINTR)
+            {
+                if (!keep_running)
+                    break;
                 continue;
+            }
             perror("accept");
             continue;
         }
@@ -272,7 +289,8 @@ void run_server(int port, int backlog)
         close(client_fd);
     }
 
-    free(routes);
+    printf("\nShutting down server...\n");
 
+    free(routes);
     close(server_fd);
 }
