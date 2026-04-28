@@ -174,7 +174,11 @@ static void dispatch(Request *req, int client_fd, struct sockaddr_in *client_add
         {
             int status = routes[i].handler(req, client_fd);
 
-            printf("%s - - [%s] \"%s %s?%s %s\" %d\n", ip, timebuf, req->method, req->path, req->query, req->version, status);
+            printf("%s - - [%s] \"%s %s%s%s %s\" %d\n",
+                   ip, timebuf, req->method, req->path,
+                   req->query ? "?" : "",
+                   req->query ? req->query : "",
+                   req->version, status);
             fflush(stdout);
 
             return;
