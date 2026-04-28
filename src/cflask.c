@@ -81,6 +81,47 @@ static ssize_t write_all(int fd, const void *buf, size_t len)
     return (ssize_t)total;
 }
 
+static char *url_decode(const char *src)
+{
+    if (!src)
+        return NULL;
+
+    size_t len = strlen(src);
+    char *decoded = malloc(len + 1); // decoded is always <= src length
+    if (!decoded)
+        return NULL;
+
+    size_t i = 0, j = 0;
+
+    while (i < len)
+    {
+        if (src[i] == '%' && i + 2 < len)
+        {
+            char hex[3] = {src[i + 1], src[i + 2], '\0'};
+            char *end;
+            long val = strtol(hex, &end, 16);
+
+            if (end == hex + 2) // both digits were valid hex
+            {
+                decoded[j++] = (char)val;
+                i += 3;
+            }
+            else // not valid hex — pass through literally
+                decoded[j++] = src[i++];
+        }
+        else if (src[i] == '+')
+        {
+            decoded[j++] = ' ';
+            i++;
+        }
+        else
+            decoded[j++] = src[i++];
+    }
+
+    decoded[j] = '\0';
+    return decoded;
+}
+
 char *get_query_param(const char *query, const char *key)
 {
     if (!query || !key)
@@ -102,7 +143,7 @@ char *get_query_param(const char *query, const char *key)
 
             if (strcmp(k, key) == 0)
             {
-                char *result = strdup(v); // return a copy
+                char *result = url_decode(v);
                 free(q);
                 return result;
             }
