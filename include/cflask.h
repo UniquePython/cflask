@@ -14,22 +14,29 @@ typedef struct
 
 void register_route(const char *method, const char *path, int (*handler)(Request *, int));
 char *get_query_param(const char *query, const char *key);
-void send_response(int client_fd, int status, const char *status_text, const char *body);
+void send_response(int client_fd, int status, const char *status_text, const char *content_type, const char *body);
 void run_server(uint16_t port, int backlog);
 
 #define HANDLER(name) int name##_handler(Request *req, int client_fd)
-#define RESPOND(code, msg, body)                   \
-    do                                             \
-    {                                              \
-        send_response(client_fd, code, msg, body); \
-        return code;                               \
+#define RESPOND(code, msg, content_type, body)                   \
+    do                                                           \
+    {                                                            \
+        send_response(client_fd, code, msg, content_type, body); \
+        return code;                                             \
     } while (0)
 
 #define GET_QUERY_PARAM(var, key) char *var = get_query_param(req->query, key)
 
-#define OK(body) RESPOND(200, "OK", body)
-#define NOT_FOUND(body) RESPOND(404, "Not Found", body)
-#define BAD_REQUEST(body) RESPOND(400, "Bad Request", body)
+#define CONTENT_TYPE_PLAINTEXT "text/plain"
+#define CONTENT_TYPE_JSON "application/json"
+
+#define OK_PLAINTEXT(body) RESPOND(200, "OK", CONTENT_TYPE_PLAINTEXT, body)
+#define NOT_FOUND_PLAINTEXT(body) RESPOND(404, "Not Found", CONTENT_TYPE_PLAINTEXT, body)
+#define BAD_REQUEST_PLAINTEXT(body) RESPOND(400, "Bad Request", CONTENT_TYPE_PLAINTEXT, body)
+
+#define OK_JSON(body) RESPOND(200, "OK", CONTENT_TYPE_JSON, body)
+#define NOT_FOUND_JSON(body) RESPOND(404, "Not Found", CONTENT_TYPE_JSON, body)
+#define BAD_REQUEST_JSON(body) RESPOND(400, "Bad Request", CONTENT_TYPE_JSON, body)
 
 #define _REGISTER_METHOD(method, route) register_route(#method, "/" #route, route##_handler);
 

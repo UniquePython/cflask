@@ -4,10 +4,10 @@ HANDLER(greet)
 {
     GET_QUERY_PARAM(name, "name");
     if (!name)
-        BAD_REQUEST("missing 'name' parameter");
+        BAD_REQUEST_PLAINTEXT("missing 'name' parameter");
 
     int status = 200;
-    send_response(client_fd, 200, "OK", name);
+    send_response(client_fd, 200, "OK", CONTENT_TYPE_PLAINTEXT, name);
     free(name);
     return status;
 }

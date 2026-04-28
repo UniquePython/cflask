@@ -115,18 +115,18 @@ char *get_query_param(const char *query, const char *key)
     return NULL;
 }
 
-void send_response(int client_fd, int status, const char *status_text, const char *body)
+void send_response(int client_fd, int status, const char *status_text, const char *content_type, const char *body)
 {
     char header[512];
     size_t body_len = strlen(body);
 
     int header_len = snprintf(header, sizeof(header),
                               "HTTP/1.1 %d %s\r\n"
-                              "Content-Type: text/plain\r\n"
+                              "Content-Type: %s\r\n"
                               "Content-Length: %zu\r\n"
                               "Connection: close\r\n"
                               "\r\n",
-                              status, status_text, body_len);
+                              status, status_text, content_type, body_len);
 
     // snprintf error
     if (header_len < 0)
@@ -185,7 +185,7 @@ static void dispatch(Request *req, int client_fd, struct sockaddr_in *client_add
         }
     }
 
-    send_response(client_fd, 404, "Not Found", "404 Not Found");
+    send_response(client_fd, 404, "Not Found", CONTENT_TYPE_PLAINTEXT, "404 Not Found");
 
     printf("%s - - [%s] \"%s %s %s\" %d\n", ip, timebuf, req->method, req->path, req->version, 404);
     fflush(stdout);
@@ -329,7 +329,7 @@ void run_server(uint16_t port, int backlog)
 
         if (!req.method || !req.path || !req.version)
         {
-            send_response(client_fd, 400, "Bad Request", "400 Bad Request");
+            send_response(client_fd, 400, "Bad Request", CONTENT_TYPE_PLAINTEXT, "400 Bad Request");
             close(client_fd);
             free(buffer);
             continue;
@@ -341,7 +341,7 @@ void run_server(uint16_t port, int backlog)
             strcmp(req.method, "PATCH") != 0 &&
             strcmp(req.method, "DELETE") != 0)
         {
-            send_response(client_fd, 405, "Method Not Allowed", "Method Not Allowed");
+            send_response(client_fd, 405, "Method Not Allowed", CONTENT_TYPE_PLAINTEXT, "Method Not Allowed");
             close(client_fd);
             free(buffer);
             continue;
@@ -349,7 +349,7 @@ void run_server(uint16_t port, int backlog)
 
         if (strncmp(req.version, "HTTP/", 5) != 0)
         {
-            send_response(client_fd, 400, "Bad Request", "Invalid HTTP version");
+            send_response(client_fd, 400, "Bad Request", CONTENT_TYPE_PLAINTEXT, "Invalid HTTP version");
             close(client_fd);
             free(buffer);
             continue;
