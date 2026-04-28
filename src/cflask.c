@@ -244,6 +244,7 @@ static ssize_t read_request(int fd, char **out_buf)
     if (!buffer)
         return -1;
 
+    // read until we have the full headers
     while (1)
     {
         if (total == capacity - 1)
@@ -251,9 +252,8 @@ static ssize_t read_request(int fd, char **out_buf)
             if (capacity >= MAX_REQUEST_SIZE)
             {
                 free(buffer);
-                return -1; // too large
+                return -1;
             }
-
             capacity *= 2;
             char *tmp = realloc(buffer, capacity);
             if (!tmp)
@@ -265,7 +265,6 @@ static ssize_t read_request(int fd, char **out_buf)
         }
 
         ssize_t n = read(fd, buffer + total, capacity - 1 - total);
-
         if (n < 0)
         {
             if (errno == EINTR)
@@ -273,7 +272,6 @@ static ssize_t read_request(int fd, char **out_buf)
             free(buffer);
             return -1;
         }
-
         if (n == 0)
             break;
 
@@ -284,8 +282,63 @@ static ssize_t read_request(int fd, char **out_buf)
             break;
     }
 
+    // if there's a body, read it too
+    char *hdr_end = strstr(buffer, "\r\n\r\n");
+    if (hdr_end)
+    {
+        char *cl_header = strstr(buffer, "Content-Length: ");
+        if (cl_header && cl_header < hdr_end)
+        {
+            long content_length = strtol(cl_header + 16, NULL, 10);
+
+            if (content_length > 0)
+            {
+                size_t body_offset = (size_t)(hdr_end + 4 - buffer);
+                size_t body_already = total - body_offset;
+                size_t body_remaining = (size_t)content_length - body_already;
+                size_t total_needed = total + body_remaining;
+
+                if (total_needed + 1 > MAX_REQUEST_SIZE)
+                {
+                    free(buffer);
+                    return -1;
+                }
+
+                if (total_needed + 1 > capacity)
+                {
+                    char *tmp = realloc(buffer, total_needed + 1);
+                    if (!tmp)
+                    {
+                        free(buffer);
+                        return -1;
+                    }
+                    buffer = tmp;
+                    capacity = total_needed + 1;
+                }
+
+                while (body_already < (size_t)content_length)
+                {
+                    ssize_t n = read(fd, buffer + total, (size_t)content_length - body_already);
+                    if (n < 0)
+                    {
+                        if (errno == EINTR)
+                            continue;
+                        free(buffer);
+                        return -1;
+                    }
+                    if (n == 0)
+                        break;
+                    total += (size_t)n;
+                    body_already += (size_t)n;
+                }
+
+                buffer[total] = '\0';
+            }
+        }
+    }
+
     *out_buf = buffer;
-    return total;
+    return (ssize_t)total;
 }
 
 void run_server(uint16_t port, int backlog)
@@ -364,6 +417,26 @@ void run_server(uint16_t port, int backlog)
 
         Request req = {0};
 
+        // --- body parsing (must happen before strtok) ---
+        char *hdr_end = strstr(buffer, "\r\n\r\n");
+        const char *body_ptr = NULL;
+        size_t body_len = 0;
+
+        if (hdr_end)
+        {
+            char *cl_header = strstr(buffer, "Content-Length: ");
+            if (cl_header && cl_header < hdr_end)
+            {
+                long content_length = strtol(cl_header + 16, NULL, 10);
+                if (content_length > 0)
+                {
+                    body_ptr = hdr_end + 4;
+                    body_len = (size_t)content_length;
+                }
+            }
+        }
+        // -------------------------------------------------
+
         req.method = strtok(buffer, " ");
         req.path = strtok(NULL, " ");
         req.version = strtok(NULL, "\r\n");
@@ -396,7 +469,6 @@ void run_server(uint16_t port, int backlog)
             continue;
         }
 
-        // split query
         char *qmark = strchr(req.path, '?');
         if (qmark)
         {
@@ -406,10 +478,13 @@ void run_server(uint16_t port, int backlog)
         else
             req.query = NULL;
 
+        // assign body after all strtok/parsing is done
+        req.body = body_ptr;
+        req.body_len = body_len;
+
         dispatch(&req, client_fd, &client_addr);
 
         free(buffer);
-
         close(client_fd);
     }
 

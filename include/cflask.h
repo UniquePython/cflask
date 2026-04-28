@@ -12,6 +12,8 @@ typedef struct
     const char *path;
     const char *query;
     const char *version;
+    const char *body; // NULL if no body
+    size_t body_len;
 } Request;
 
 void register_route(const char *method, const char *path, int (*handler)(Request *, int));
@@ -28,6 +30,9 @@ void run_server(uint16_t port, int backlog);
     } while (0)
 
 #define GET_QUERY_PARAM(var, key) char *var = get_query_param(req->query, key)
+#define GET_BODY(var)            \
+    const char *var = req->body; \
+    size_t var##_len = req->body_len
 
 #define CONTENT_TYPE_PLAINTEXT "text/plain"
 #define CONTENT_TYPE_JSON "application/json"
